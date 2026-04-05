@@ -9,23 +9,32 @@ import Authors from "./components/Authors";
 import Books from "./components/Books";
 import NewBook from "./components/NewBook";
 import LoginForm from "./components/LoginForm";
+import Notification from "./components/Notification";
 
 const App = () => {
+  const [errorMessage, setErrorMessage] = useState(null)
   const [token, setToken] = useState(localStorage.getItem(STORAGE_KEY));
   const client = useApolloClient();
 
   useSubscription(BOOK_ADDED, {
     onData: ({ data }) => {
       const addedBook = data.data.bookAdded;
-      alert(`New book added: ${addedBook.title} by ${addedBook.author.name}`);
+      notify(`New book added: ${addedBook.title} by ${addedBook.author.name}`);
       addBookToCache(client.cache, addedBook);
     },
   });
-  
+
   const onLogout = () => {
     setToken(null);
     localStorage.clear();
     client.resetStore();
+  };
+
+  const notify = (message) => {
+    setErrorMessage(message);
+    setTimeout(() => {
+      setErrorMessage(null);
+    }, 5000);
   };
 
   return (
@@ -50,6 +59,8 @@ const App = () => {
 
           {token && <button onClick={onLogout}>logout</button>}
         </div>
+
+        <Notification errorMessage={errorMessage} />
 
         <Routes>
           <Route path="/authors" element={<Authors />} />
