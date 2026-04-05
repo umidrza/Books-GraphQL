@@ -1,15 +1,17 @@
 import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 import { useState } from "react";
 import { useApolloClient, useSubscription } from "@apollo/client/react";
+import { BOOK_ADDED } from "./queries";
+import { addBookToCache } from "./utils/apolloCache";
+import { STORAGE_KEY } from "./utils/storage";
+
 import Authors from "./components/Authors";
 import Books from "./components/Books";
 import NewBook from "./components/NewBook";
 import LoginForm from "./components/LoginForm";
-import { BOOK_ADDED } from "./queries";
-import { addBookToCache } from "./utils/apolloCache";
 
 const App = () => {
-  const [token, setToken] = useState(localStorage.getItem("books-user-token"));
+  const [token, setToken] = useState(localStorage.getItem(STORAGE_KEY));
   const client = useApolloClient();
 
   useSubscription(BOOK_ADDED, {

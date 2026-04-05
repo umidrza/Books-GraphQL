@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation } from '@apollo/client/react'
 import { LOGIN } from '../queries'
+import { STORAGE_KEY } from '../utils/storage'
 
 
 const LoginForm = ({ setError, setToken }) => {
@@ -12,7 +13,7 @@ const LoginForm = ({ setError, setToken }) => {
     onCompleted: (data) => {
       const token = data.login.value
       setToken(token)
-      localStorage.setItem('books-user-token', token)
+      localStorage.setItem(STORAGE_KEY, token)
     },
     onError: (error) => {
       setError(error.message)

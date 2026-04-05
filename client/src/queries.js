@@ -79,6 +79,14 @@ export const LOGIN = gql`
   }
 `;
 
+export const ME = gql`
+  query {
+    me {
+      favoriteGenre
+    }
+  }
+`;
+
 export const BOOK_ADDED = gql`
   subscription {
     bookAdded {
