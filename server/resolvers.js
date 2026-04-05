@@ -1,64 +1,45 @@
-const Author = require("./models/author");
-const Book = require("./models/book");
-const User = require("./models/user");
 const { GraphQLError } = require("graphql");
 const jwt = require("jsonwebtoken");
 const { PubSub } = require("graphql-subscriptions");
 
+const Author = require("./models/author");
+const Book = require("./models/book");
+const User = require("./models/user");
+
 const pubsub = new PubSub();
 const BOOK_ADDED = "BOOK_ADDED";
-
-const getAuthorBookCounts = async () => {
-  const counts = await Book.aggregate([
-    {
-      $group: {
-        _id: "$author",
-        bookCount: { $sum: 1 },
-      },
-    },
-  ]);
-
-  return new Map(
-    counts.map(({ _id, bookCount }) => [String(_id), bookCount])
-  );
-};
+let bookCache = null;
 
 const resolvers = {
   Query: {
     bookCount: async () => Book.countDocuments(),
     authorCount: async () => Author.countDocuments(),
 
-    allBooks: async (root, args) => {
-      let filter = {};
+    allBooks: async (root, { author, genre }) => {
+      const query = {};
 
-      // filter by author
-      if (args.author) {
-        const author = await Author.findOne({ name: args.author });
-        if (author) {
-          filter.author = author._id;
-        } else {
-          return [];
-        }
+      if (author) {
+        const authorInDb = await Author.findOne({ name: author });
+        query.author = authorInDb.id;
       }
 
-      // filter by genre
-      if (args.genre) {
-        filter.genres = { $in: [args.genre] };
+      if (genre) {
+        query.genres = genre;
       }
 
-      return Book.find(filter).populate("author");
+      return Book.find(query).populate("author");
     },
 
-    allAuthors: async () => {
-      const [authors, bookCounts] = await Promise.all([
-        Author.find({}),
-        getAuthorBookCounts(),
-      ]);
+    allAuthors: async (root, args, context, query) => {
+      const fieldsNames = query.fieldNodes[0].selectionSet.selections.map(
+        (f) => f.name.value,
+      );
 
-      return authors.map((author) => ({
-        ...author.toObject(),
-        bookCount: bookCounts.get(String(author._id)) ?? 0,
-      }));
+      if (fieldsNames.includes("bookCount")) {
+        bookCache = await Book.find({});
+      }
+
+      return Author.find({});
     },
 
     me: (root, args, context) => {
@@ -67,47 +48,55 @@ const resolvers = {
   },
 
   Mutation: {
-    addBook: async (root, args, context) => {
-      const currentUser = context.currentUser;
-
+    addBook: async (
+      root,
+      { title, author, published, genres },
+      { currentUser },
+    ) => {
       if (!currentUser) {
-        throw new GraphQLError("not authenticated", {
-          extensions: {
-            code: "UNAUTHENTICATED",
-          },
+        throw new GraphQLError("Must be signed in", {
+          extensions: { code: "BAD_USER_INPUT" },
         });
       }
+
+      let book = new Book({ title, published, genres });
+
+      let authorInDb = await Author.findOne({ name: author });
+
+      if (!authorInDb) {
+        authorInDb = new Author({ name: author });
+        try {
+          await await authorInDb.save();
+        } catch (error) {
+          throw new GraphQLError("Saving author failed", {
+            extensions: {
+              code: "BAD_USER_INPUT",
+              invalidArgs: { author },
+              error,
+            },
+          });
+        }
+      }
+
+      book.author = authorInDb.id;
 
       try {
-        let author = await Author.findOne({ name: args.author });
-
-        if (!author) {
-          author = new Author({ name: args.author });
-          await author.save();
-        }
-
-        const book = new Book({
-          ...args,
-          author: author._id,
-        });
-
         await book.save();
-
-        const populatedBook = await Book.findById(book._id).populate("author");
-
-        await pubsub.publish(BOOK_ADDED, {
-          bookAdded: populatedBook,
-        });
-
-        return populatedBook;
       } catch (error) {
-        throw new GraphQLError(error.message, {
+        throw new GraphQLError("Saving book failed", {
           extensions: {
             code: "BAD_USER_INPUT",
-            invalidArgs: args,
+            invalidArgs: { title, published, genres },
+            error: error.errors.title,
           },
         });
       }
+
+      book = await Book.findById(book.id).populate("author");
+
+      pubsub.publish("BOOK_ADDED", { bookAdded: book });
+
+      return book;
     },
 
     editAuthor: async (root, args, context) => {
@@ -178,11 +167,10 @@ const resolvers = {
 
   Author: {
     bookCount: async (root) => {
-      if (typeof root.bookCount === "number") {
-        return root.bookCount;
+      if (bookCache) {
+        return bookCache.filter((b) => b.author.toString() === root.id).length;
       }
-
-      return Book.countDocuments({ author: root._id });
+      return Book.countDocuments({ author: root.id });
     },
   },
 

@@ -12,6 +12,6 @@ const schema = new mongoose.Schema({
   born: Number,
 });
 
-schema.plugin(uniqueValidator)
+schema.plugin(uniqueValidator.default)
 
 module.exports = mongoose.model("Author", schema);
